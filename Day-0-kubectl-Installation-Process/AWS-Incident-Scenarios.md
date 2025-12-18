@@ -1,275 +1,442 @@
-Below is a direct mapping of your kubectl/Kubernetes Q&A to real AWS incident scenarios, written exactly the way on-call engineers, SREs, and AWS interviewers expect answers.
+# AWS-Incident-Scenarios.md
 
-This is not theory — these are real incidents that happen in AWS EKS environments.
+## Real-World AWS Incident Scenarios (Mapped to Kubernetes & kubectl)
 
-Mapping: kubectl & Kubernetes → Real AWS Incident Scenarios
+This document captures **real AWS production incident scenarios** commonly faced in **EKS-based environments**, mapped to Kubernetes and `kubectl` operations. These scenarios are written in an **on-call / interview-ready** format.
 
-Platform: AWS EKS + EC2 + VPC + IAM
-Perspective: On-call / Production / Interview
+---
 
-Incident 1: kubectl Works, But Cluster Is Unreachable (SEV-1)
-Scenario
+## Incident 1: kubectl Works but Cluster Is Unreachable (SEV-1)
 
-kubectl version --client works
+### Scenario
 
-kubectl get pods hangs or times out
+* `kubectl version --client` works
+* `kubectl get pods` hangs or times out
 
-AWS Root Cause
+### AWS Root Cause
 
-EKS API server endpoint not reachable
+* EKS API server endpoint not reachable
+* VPN / Bastion / jump host network issue
+* Private endpoint without proper routing
 
-VPN / Bastion / Jump host network issue
+### Diagnosis Steps
 
-Private endpoint without proper routing
-
-How You Diagnose
+```bash
 kubectl cluster-info
 kubectl config current-context
+```
 
-AWS-Level Checks
+### AWS Checks
 
-VPC route tables
+* VPC route tables
+* Security Groups
+* EKS endpoint access (public/private)
 
-Security Groups (API server access)
+### Resolution
 
-EKS endpoint access (public/private)
+* Restore network connectivity
+* Update routing or endpoint access
 
-Interview Mapping
+---
 
-“kubectl is only a client. If the EKS control plane is unreachable, kubectl cannot operate.”
+## Incident 2: Access Denied / Forbidden Error (SEV-2)
 
-Incident 2: Repository Not Found / Access Denied to Cluster (SEV-2)
-Scenario
+### Scenario
 
-kubectl installed and configured
+* kubectl installed and configured
+* Error: `Forbidden` or authentication failure
 
-Error: Forbidden or You must be logged in to the server
+### AWS Root Cause
 
-AWS Root Cause
+* IAM role/user not mapped in `aws-auth` ConfigMap
+* Missing Kubernetes RBAC permissions
 
-IAM user/role not mapped in aws-auth ConfigMap
+### Diagnosis
 
-Missing RBAC permissions
-
-How You Diagnose
+```bash
 kubectl auth can-i get pods
-kubectl config get-contexts
+```
 
-AWS Fix
+### Resolution
 
-Update aws-auth ConfigMap
+* Update `aws-auth` ConfigMap
+* Grant appropriate RBAC roles
 
-Attach correct IAM role
+---
 
-Use IRSA for service access
+## Incident 3: Command Executed on Wrong Cluster (SEV-0 Near Miss)
 
-Interview Mapping
+### Scenario
 
-“In EKS, IAM controls authentication, RBAC controls authorization.”
+* Changes intended for dev affected production
 
-Incident 3: Engineer Ran Command on Wrong Cluster (SEV-0 Near Miss)
-Scenario
+### Root Cause
 
-Intended to deploy to dev
+* Multiple kubeconfig contexts
+* No context validation
 
-Accidentally modified prod
+### Prevention
 
-AWS Root Cause
-
-Multiple kubeconfig contexts
-
-No context awareness
-
-How You Prevent
+```bash
 kubectl config get-contexts
 kubectl config use-context dev
+```
 
-AWS Best Practice
+### Best Practice
 
-Separate AWS accounts per environment
+* Separate AWS accounts per environment
+* Read-only access for production
 
-Separate EKS clusters
+---
 
-Read-only prod access
+## Incident 4: Pods Stuck in Pending State (SEV-1)
 
-Interview Mapping
+### Scenario
 
-“Context isolation is critical to prevent production outages.”
+* Deployment created
+* Pods not scheduled
 
-Incident 4: kubectl Installed, Pods Not Scheduling (SEV-1)
-Scenario
+### AWS Root Cause
 
-kubectl apply works
+* EC2 node group capacity exhausted
+* AZ capacity issues
 
-Pods stuck in Pending
+### Diagnosis
 
-AWS Root Cause
-
-EC2 node group out of capacity
-
-AZ capacity shortage
-
-Wrong instance types
-
-How You Diagnose
-kubectl describe pod <pod>
+```bash
+kubectl describe pod <pod-name>
 kubectl get nodes
+```
 
-AWS Fix
+### Resolution
 
-Scale node group
+* Scale node group
+* Enable Cluster Autoscaler
 
-Use mixed instance policy
+---
 
-Enable Cluster Autoscaler
+## Incident 5: kubectl Works on Jump Host but Not Locally (SEV-3)
 
-Incident 5: kubectl Works on Jump Host but Not on Laptop (SEV-3)
-Scenario
+### Scenario
 
-On-call engineer cannot run kubectl locally
+* kubectl commands fail on laptop
 
-AWS Root Cause
+### Root Cause
 
-kubeconfig missing locally
+* Missing kubeconfig locally
+* Expired AWS credentials
 
-IAM credentials expired
+### Fix
 
-Fix
-aws eks update-kubeconfig --region us-east-1 --name cluster-name
+```bash
+aws eks update-kubeconfig --region us-east-1 --name <cluster-name>
+```
 
-Interview Mapping
+---
 
-“kubeconfig is machine-specific; kubectl installation alone is insufficient.”
+## Incident 6: kubectl Unresponsive During Outage (SEV-0)
 
-Incident 6: kubectl Hangs During Production Outage (SEV-0)
-Scenario
+### Scenario
 
-ALB returning 5xx
+* ALB returning 5xx
+* kubectl commands not responding
 
-kubectl commands not responding
+### Root Cause
 
-AWS Root Cause
+* EKS control plane degradation
+* Network partition
 
-EKS control plane degraded
+### Recovery
 
-Network partition
+* GitOps rollback
+* AWS Console (last resort)
 
-etcd pressure
+---
 
-Recovery Path
+## Incident 7: Pod Crashes After Deployment (SEV-1)
 
-Use GitOps rollback
+### Scenario
 
-AWS Console (last resort)
+* Pods restart frequently
 
-CloudWatch + ALB metrics
+### Root Cause
 
-Interview Mapping
+* Image tag `latest` used
+* Breaking change introduced
 
-“kubectl is not a recovery system; it depends on the control plane.”
+### Diagnosis
 
-Incident 7: Sudden Pod Failures After Deployment (SEV-1)
-Scenario
-
-Pods crash after deployment
-
-kubectl shows restarts
-
-AWS Root Cause
-
-latest image pulled
-
-Breaking change introduced
-
-How You Diagnose
-kubectl describe pod
+```bash
+kubectl describe pod <pod>
 kubectl logs <pod>
+```
 
-AWS Fix
+### Resolution
 
-Pin image versions
+* Pin image versions
+* Roll back Deployment
 
-Roll back via Deployment
+---
 
-Use canary / blue-green
+## Incident 8: Sudden AWS Cost Spike (Cost Incident)
 
-Incident 8: High AWS Bill Overnight (Cost Incident)
-Scenario
+### Scenario
 
-Cost spike without traffic increase
+* Unexpected increase in AWS bill
 
-Root Cause
+### Root Cause
 
-No resource limits
+* No resource limits
+* HPA and Cluster Autoscaler runaway
 
-HPA scaling aggressively
+### Diagnosis
 
-Cluster Autoscaler runaway
-
-kubectl Check
+```bash
 kubectl describe hpa
 kubectl top pods
+```
 
-AWS Fix
+### Resolution
 
-Resource quotas
+* Set resource limits
+* Enforce scaling boundaries
 
-HPA max limits
+---
 
-Spot instances
+## Incident 9: Unauthorized Resource Creation (Security – SEV-0)
 
-Incident 9: Security Breach – Unauthorized kubectl Usage (SEV-0)
-Scenario
+### Scenario
 
-Unknown resources created
+* Unknown workloads appear
 
-AWS Root Cause
+### Root Cause
 
-Over-permissive IAM role
+* Over-permissive IAM roles
+* Shared kubeconfig files
 
-Shared kubeconfig
+### Resolution
 
-Fix
+* Rotate credentials
+* Enforce IAM + RBAC
+* Enable CloudTrail and audit logs
 
-Rotate credentials
+---
 
-Enforce IAM + RBAC
+## Incident 10: No Audit Trail for Production Changes
 
-Enable CloudTrail + audit logs
+### Scenario
 
-Interview Mapping
+* Manual kubectl changes
+* No Git history
 
-“kubectl access equals cluster control.”
+### Root Cause
 
-Incident 10: Production Change Without Audit Trail
-Scenario
+* No GitOps enforcement
 
-Manual kubectl apply
+### Resolution
 
-No Git history
+* Implement ArgoCD / Flux
+* Restrict kubectl write access in prod
 
-Root Cause
+---
 
-No GitOps
+## High-Value AWS Mapping Table
 
-Engineers modifying prod directly
+| Kubernetes Concept | AWS Component     |
+| ------------------ | ----------------- |
+| kubectl            | Client Tool       |
+| API Server         | EKS Control Plane |
+| Node               | EC2               |
+| Authentication     | IAM               |
+| Authorization      | RBAC              |
+| Service            | ALB / NLB         |
+| Logs               | CloudWatch        |
+| GitOps             | CI/CD + ArgoCD    |
 
-AWS / Kubernetes Fix
+---
 
-ArgoCD / Flux
+## Interview Key Takeaway
 
-Read-only kubectl in prod
+> "Most AWS EKS incidents are IAM, networking, or capacity issues. kubectl is only the control and visibility layer."
 
-High-Value AWS Mapping Table
-Kubernetes / kubectl	AWS Component
-kubectl	Client tool
-API Server	EKS Control Plane
-Node	EC2
-Auth	IAM
-AuthZ	RBAC
-Service	ALB / NLB
-Logs	CloudWatch
-GitOps	CI/CD + ArgoCD
-Interview Power Answer (Use This)
+---
 
-“Most AWS EKS incidents are not kubectl issues — they are IAM, networking, or capacity issues. kubectl is only the visibility and control interface.”
+## Conclusion
+
+These scenarios reflect **real AWS production incidents** and demonstrate how Kubernetes knowledge, AWS services, and operational discipline intersect in real-world environments.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
